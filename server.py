@@ -5,6 +5,7 @@ import os
 import sqlite3  # for the users database
 import hashlib
 import base64
+import secrets  # for cryptographically secure random salt generation
 from urllib.parse import parse_qs, urlparse
 from crypto import encrypt, decrypt, generate_password
 
@@ -22,18 +23,24 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL
+            password_hash TEXT NOT NULL,
+            salt TEXT NOT NULL
         )
     ''')
     conn.commit()
     conn.close()
 
 
-def hash_password(password):
+def hash_password(password, salt=None):
+    # Generate random salt if not provided (happens at signup)
+    if salt is None:
+        salt = secrets.token_hex(16)  # 32-character random hex string
     # first encode to base64, then hash with SHA-256 (can't be reversed)
     b64 = base64.b64encode(password.encode('utf-8')).decode('utf-8')
-    hashed = hashlib.sha256(b64.encode('utf-8')).hexdigest()
-    return hashed
+    # Combine salt with password before hashing (salt makes each hash unique)
+    hashed = hashlib.sha256((salt + b64).encode('utf-8')).hexdigest()
+    # Return both the hash and the salt
+    return hashed, salt
 
 
 #bring passwords from json
@@ -91,20 +98,31 @@ class PasswordManager(http.server.SimpleHTTPRequestHandler):
             if not username or not password:
                 self.send_json_response({"error": "Missing fields"}, 400)
                 return
-            password_hash = hash_password(password)
             conn = sqlite3.connect(DB_FILE)
             cursor = conn.cursor()
-            # look for a user with that exact username and password hash
+            # Fetch user record by username only (don't check password yet)
             cursor.execute(
-                "SELECT user_id, username FROM users WHERE username = ? AND password_hash = ?",
-                (username, password_hash)
+                "SELECT user_id, username, password_hash, salt FROM users WHERE username = ?",
+                (username,)
             )
             row = cursor.fetchone()
             conn.close()
             if row:
-                # found the user, send back their id and username
-                self.send_json_response({"success": True, "user_id": row[0], "username": row[1]})
+                # User found, now verify password using stored salt
+                stored_user_id = row[0]
+                stored_username = row[1]
+                stored_hash = row[2]
+                stored_salt = row[3]
+                # Hash provided password with the SAME salt used at signup
+                provided_hash, _ = hash_password(password, stored_salt)
+                if provided_hash == stored_hash:
+                    # Passwords match, login successful
+                    self.send_json_response({"success": True, "user_id": stored_user_id, "username": stored_username})
+                else:
+                    # Password doesn't match
+                    self.send_json_response({"error": "Wrong username or password"}, 401)
             else:
+                # User not found
                 self.send_json_response({"error": "Wrong username or password"}, 401)
             return
 
@@ -115,13 +133,15 @@ class PasswordManager(http.server.SimpleHTTPRequestHandler):
             if not username or not password:
                 self.send_json_response({"error": "Missing fields"}, 400)
                 return
-            password_hash = hash_password(password)
+            # Generate hash and salt (returns both)
+            password_hash, salt = hash_password(password)
             try:
                 conn = sqlite3.connect(DB_FILE)
                 cursor = conn.cursor()
+                # Insert username, hash, AND salt
                 cursor.execute(
-                    "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-                    (username, password_hash)
+                    "INSERT INTO users (username, password_hash, salt) VALUES (?, ?, ?)",
+                    (username, password_hash, salt)
                 )
                 conn.commit()
                 user_id = cursor.lastrowid  # the generated ID for this new user
