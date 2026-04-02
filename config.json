@@ -1,0 +1,4 @@
+{
+    "MAX_LOGIN_ATTEMPTS": 3,
+    "LOCKOUT_SECONDS": 60
+}
