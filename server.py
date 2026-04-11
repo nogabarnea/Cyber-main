@@ -62,7 +62,7 @@ def save_passwords(passwords):
 class PasswordManager(http.server.SimpleHTTPRequestHandler):    
     def do_GET(self):
         parsed = urlparse(self.path)
-        #get all passwords (optionally filtered by user_id)
+        #get all passwords ,filtered by user_id if provided from query
         if parsed.path == '/api/passwords':
             passwords = load_passwords()
             query = parse_qs(parsed.query)
@@ -100,7 +100,7 @@ class PasswordManager(http.server.SimpleHTTPRequestHandler):
                 return
             conn = sqlite3.connect(DB_FILE)
             cursor = conn.cursor()
-            # Fetch user record by username only (don't check password yet)
+            # fetch user record by username only
             cursor.execute(
                 "SELECT user_id, username, password_hash, salt FROM users WHERE username = ?",
                 (username,)
@@ -108,12 +108,12 @@ class PasswordManager(http.server.SimpleHTTPRequestHandler):
             row = cursor.fetchone()
             conn.close()
             if row:
-                # User found, now verify password using stored salt
+                # user found, now verify password using stored salt
                 stored_user_id = row[0]
                 stored_username = row[1]
                 stored_hash = row[2]
                 stored_salt = row[3]
-                # Hash provided password with the SAME salt used at signup
+                # hash provided password with the SAME salt used at signup
                 provided_hash, _ = hash_password(password, stored_salt)
                 if provided_hash == stored_hash:
                     # Passwords match, login successful
@@ -148,7 +148,7 @@ class PasswordManager(http.server.SimpleHTTPRequestHandler):
                 conn.close()
                 self.send_json_response({"success": True, "user_id": user_id})
             except sqlite3.IntegrityError:
-                # username taken - UNIQUE constraint failed
+                # username taken, UNIQUE constraint failed
                 conn.close()
                 self.send_json_response({"error": "Username already exists"}, 400)
             return
@@ -200,8 +200,11 @@ class PasswordManager(http.server.SimpleHTTPRequestHandler):
             except:
                 self.send_json_response({"error": "Invalid ID"}, 400)
             return
-        if parsed.path == '/api/passwords': #clear every paaword
-            save_passwords([])
+        if parsed.path.startswith('/api/all/passwords/'): #clear all paaword by user
+            passwords = load_passwords()
+            user_id = parsed.path.split('/')[-1]
+            passwords = [p for p in passwords if p['user_id'] != user_id] # load evrything but deleted ones
+            save_passwords(passwords)
             self.send_json_response({"success": True})
             return
         self.send_json_response({"error": "Not found"}, 404)

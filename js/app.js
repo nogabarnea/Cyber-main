@@ -119,7 +119,7 @@ function createPasswordItemHTML(entry) {
 function addPasswordItemListeners() { //show/hide password buttons and delete buttons
     document.querySelectorAll(".show-btn").forEach(function(btn) {
         btn.addEventListener("click", async function() {
-            let item = this.closest(".password-item"); //get the cdiv the button is in
+            let item = this.closest(".password-item"); //get the div the button is in
             let passwordInput = item.querySelector(".password-display"); //get the input field inside that div
             if (passwordInput.type === "password") {
                 //Get password (from the dots) and undot it
@@ -174,15 +174,16 @@ function addPasswordItemListeners() { //show/hide password buttons and delete bu
 }
 
 async function clearAll() {
+    alert("This will delete ALL passwords. This action cannot be undone.");
     if (confirm("Are you sure you want to delete ALL passwords?")) {
         try {
-            await fetch("/api/passwords", {
+            await fetch("/api/all/passwords/" + currentUserId, {
                 method: "DELETE"
             });
-            
             loadPasswords();
             alert("All passwords cleared");
         } catch (error) {
+            console.error("Error clearing passwords:", error);
             alert("Error clearing passwords");
         }
     }

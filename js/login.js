@@ -3,13 +3,18 @@ const ATTEMPTS_KEY = "login_attempts";
 const LOCKOUT_KEY  = "login_lockout_until";
 
 // need config before anything else runs
-fetch("/config.json")
-    .then(function(res) { return res.json(); })
-    .then(function(CONFIG) { init(CONFIG); })
-    .catch(function() { alert("could not load config.json"); });
+(async () => {
+    try {
+        const res = await fetch("/config.json");
+        const config = await res.json();
+        init(config);
+    } catch {
+        alert("could not load config.json");
+    }
+})();
 
 
-function init(CONFIG) {
+function init(config) {
 
     function getLockoutSecondsLeft() {
         let lockoutUntil = localStorage.getItem(LOCKOUT_KEY);
@@ -53,17 +58,18 @@ function init(CONFIG) {
         }, 1000);
     }
 
-    // if they refresh while locked out, catch it and keep showing the countdown
+    // keep the lockdown and countdown even if page is refreshed
     if (getLockoutSecondsLeft() > 0) {
         disableForm();
         startCountdown();
     }
-
+    // if get here from sing-up
     document.getElementById("login-form").addEventListener("submit", async function(e) {
         e.preventDefault();
 
         if (getLockoutSecondsLeft() > 0) return; // just in case
 
+        ///////////// begin login, above is just preperation
         let username = document.getElementById("username").value.trim();
         let password = document.getElementById("password").value;
 
@@ -90,24 +96,24 @@ function init(CONFIG) {
                 alert("Logged in successfully!");
                 window.location.href = "index.html";
             } else {
-                // wrong password, bump the counter
+                // wrong password, increase the fail count, maybe start a lockout
                 let attempts = parseInt(localStorage.getItem(ATTEMPTS_KEY) || "0") + 1;
                 localStorage.setItem(ATTEMPTS_KEY, attempts);
 
-                if (attempts >= CONFIG.MAX_LOGIN_ATTEMPTS) {
+                if (attempts >= config.MAX_LOGIN_ATTEMPTS) {
                     // too many fails, save when they're allowed back and start the timer
-                    let lockoutUntil = Date.now() + CONFIG.LOCKOUT_SECONDS * 1000;
+                    let lockoutUntil = Date.now() + config.LOCKOUT_SECONDS * 1000;
                     localStorage.setItem(LOCKOUT_KEY, lockoutUntil);
                     disableForm();
                     startCountdown();
-                    alert("too many failed attempts. locked out for " + CONFIG.LOCKOUT_SECONDS + " seconds.");
+                    alert("too many failed attempts. locked out for " + config.LOCKOUT_SECONDS + " seconds.");
                 } else {
-                    let attemptsLeft = CONFIG.MAX_LOGIN_ATTEMPTS - attempts;
+                    let attemptsLeft = config.MAX_LOGIN_ATTEMPTS - attempts;
                     alert("wrong username or password. " + attemptsLeft + " attempt(s) left.");
                 }
             }
         } catch (error) {
-            alert("could not reach the server. is it running?");
+            alert("could not reach the server");
         }
     });
 }
